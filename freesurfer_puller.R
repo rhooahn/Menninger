@@ -48,17 +48,13 @@ sapply(1:nrow(grid2), function(x) {
 #Have all individual samples, now merge them to one df
 
 sample_files <- dir(sample_dir)
-merged_df <- read.csv(sample_files[1]); colnames(merged_df)[1] <- "MIND_ID"
-i <- sapply(merged_df, is.factor)
-merged_df[i] <- lapply(merged_df[i], as.character)
+merged_df <- read.csv(sample_files[1], header = T); colnames(merged_df)[1] <- "MIND_ID"
 
 sapply(2:length(sample_files), function(i) {
-  new_df <-  read.csv(sample_files[i])
+  new_df <-  read.csv(sample_files[i], header = T)
   colnames(new_df)[1] <- "MIND_ID"
-  
-  j <- sapply(new_df, is.factor)
-  new_df[j] <- lapply(new_df[j], as.character)
-merged_df <<- merge(merged_df, new_df, by= "MIND_ID") 
+
+  merged_df <<- merge(merged_df, new_df, by= "MIND_ID") 
   })
 
 setwd(output_dir)
