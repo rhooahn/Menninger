@@ -12,6 +12,9 @@ clinical = get(diag); rm(dataset)
 data$MIND_ID <- as.numeric(substring(data$MIND_ID, 6, 9)) #format mind_ID to just the number so we can match with diagnosis data
 
 #Begin experiment / Naming conventions fixed from here on out
+# total_ID <- intersect(clinical$MIND_ID, data$MIND_ID)
+# test_ID <- sample(total_ID, floor(1/6 * length(total_ID)))
+# write.csv(test_ID, 'test_ID.csv')
 test_ID <- read.csv('test_ID.csv')[,1] #load test ids saved randomly splitting
 data_mri = subset(data, MIND_ID %in% clinical$MIND_ID & !(MIND_ID %in% test_ID)) #subsets to the patients that have both clinical and neuroimaging results
 data_clinical = subset(clinical, MIND_ID %in% data$MIND_ID & !(MIND_ID %in% test_ID))
@@ -52,13 +55,72 @@ depression_indicator[depression_indicator>0] <- 1
 anxiety_indicator <- apply(disease_raw[,anxiety_dsm_names],1, sum, na.rm = TRUE)
 anxiety_indicator[anxiety_indicator>0] <- 1
 
-sum(anxiety_indicator) #224 of 369 with anxiety
-sum(depression_indicator)  #250 of 369 with anxiety
-sum((anxiety_indicator == 1)  & (depression_indicator == 1)) #156 of 369 have anxiety and depression
+sum(anxiety_indicator) #190 of 369 with anxiety
+sum(depression_indicator)  #208 of 369 with anxiety
+sum((anxiety_indicator == 1)  & (depression_indicator == 1)) #132 of 369 have anxiety and depression
 
 disease_dsm <- data.frame(anxiety = anxiety_indicator, depression = depression_indicator) #dsm9 grouped-disease matrix; depression and anxiety only for now
 
-#Model creation
+#Demographic data pulling
+demo_features <- c("GENDER", "AGE","PI3_1", "PIMARRIED_1", "PI4_1")
+demo_df <- data_clinical[, which(colnames(data_clinical) %in% demo_features)]
+sapply(3:5, function(x) demo_df[,x] <<- as.factor(demo_df[,x]))
 
 
-Xtr <- scale(data_mri[,-1], center = T, scale = T)
+#Data pre-processing for model input
+na_mri <- which(colSums(data_mri) == 0) ; data_mri <- data_mri[,-na_mri]#remove NA from MRI data
+na_demo <- which(rowSums(is.na(demo_df))>0); data_mri <- data_mri[-na_demo,]; demo_df <- demo_df[-na_demo,] #remove NA rows from demo
+
+demo_df$AGE <- scale(demo_df$AGE, center = T, scale = T)
+
+#initialize libraries
+library(glmnet)
+#Depression models
+Xtr_demo <- model.matrix(~., demo_df)[,-1]
+Xtr_full <- cbind(Xtr_demo, scale(data_mri[,-1], center = T, scale = T))
+Ytr <- disease_dsm[-na_demo,2]
+
+base_lam <-cv.glmnet(Xtr_demo, as.factor(Ytr), family = "binomial", #only penalize the continuous variables
+          penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, alpha = .5)$lambda.min
+
+basefit <- glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
+       penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, lambda = lamdamin, alpha = .5)
+
+cv_full <- cv.glmnet(Xtr_full, as.factor(Ytr), family = "binomial", standardize = FALSE, alpha = .5, type.measure = 'class')
+
+
+cv_full$cvm
+fullfit <- glmnet(Xtr_full, Ytr, family = "binomial", #only penalize the continuous variables
+                  penalty.factor = c(0,1,rep(0,16), rep(1,693)), standardize = FALSE, lambda = cv_full$lambda.min, alpha = .5)
+coef(fullfit)
+
+sum((predict(basefit, newx = Xtr_demo, type = 'class') == Ytr))/length(Ytr)
+sum((predict(fullfit, newx = Xtr_full, type = 'class') == Ytr))/length(Ytr)
+
+predict(fullfit, newx = Xtr_full, type = 'class') == Ytr
+
+fullplot <- glmnet(Xtr_full, Ytr, family = "binomial", #only penalize the continuous variables
+                   penalty.factor = c(0,1,rep(0,16), rep(1,693)), standardize = FALSE, nlambda=500, alpha = 1)
+
+plot(fullplot, xvar = "lambda")
+plot(cv.glmnet(Xtr_full, Ytr, family = "binomial", #only penalize the continuous variables
+              penalty.factor = c(0,1,rep(0,16), rep(1,693)), standardize = FALSE, alpha = 1))
+sum(Ytr)/length(Ytr)
+
+#Anxiety models
+Xtr_demo <- model.matrix(~., demo_df)[,-1]
+Xtr_full <- cbind(Xtr_demo, scale(data_mri[,-1], center = T, scale = T))
+Ytr <- disease_dsm[-na_demo,1]
+
+base_lam <-cv.glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
+                     penalty.factor = c(0,1,rep(0,16)), standardize = FALSE)$lambda.min
+
+basefit <- glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
+                  penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, lambda = lamdamin, alpha = 1)
+
+full_lam <- cv.glmnet(Xtr_full, Ytr, family = "binomial", alpha = 1)$lambda.min
+
+fullfit <- glmnet(Xtr_full, Ytr, family = "binomial", standardize = TRUE, lambda = full_lam, alpha = 1)
+
+coef(fullfit)
+
