@@ -1,11 +1,11 @@
 #Utilizing free surfer pull script, we now initialize baseline + neuroimaging models for Anxiety and Depression
-data_dir = '/Users/rhuang/Documents/Classes/Fall_16/Stat_Research/R/data'
-script_dir = '/Users/rhuang/Documents/Classes/Fall_16/Stat_Research/R'
+data_dir = '/Users/rhuang/Documents/Classes/Fall_16/Stat_Research/R/data' #freesurfer_out.csv
+script_dir = '/Users/rhuang/Documents/Classes/Fall_16/Stat_Research/R' #directory of this Rscript
 
 setwd(data_dir)
 #reading in data
-data <- read.csv("freesurfer_out.csv", header = T)[,-1] #free-surder
-diag = load(file = 'menninger_clincial.rda')#diagnosis
+data <- read.csv("freesurfer_out.csv", header = T)[,-1] #free-surfer
+diag = load(file = 'menninger_clincial.rda')#Clinical data should be in data directory
 clinical = get(diag); rm(dataset) 
 
 #Formatting
@@ -84,43 +84,11 @@ base_lam <-cv.glmnet(Xtr_demo, as.factor(Ytr), family = "binomial", #only penali
           penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, alpha = .5)$lambda.min
 
 basefit <- glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
-       penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, lambda = lamdamin, alpha = .5)
+       penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, lambda = base_lam, alpha = 1)
 
-cv_full <- cv.glmnet(Xtr_full, as.factor(Ytr), family = "binomial", standardize = FALSE, alpha = .5, type.measure = 'class')
-
-
-cv_full$cvm
-fullfit <- glmnet(Xtr_full, Ytr, family = "binomial", #only penalize the continuous variables
-                  penalty.factor = c(0,1,rep(0,16), rep(1,693)), standardize = FALSE, lambda = cv_full$lambda.min, alpha = .5)
+cv_full <- cv.glmnet(Xtr_full, as.factor(Ytr),
+                     family = "binomial",standardize = FALSE, alpha = .5, 
+                     type.measure = 'class')
+fullfit <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE,
+                  lambda = cv_full$lambda.min, alpha = .5)
 coef(fullfit)
-
-sum((predict(basefit, newx = Xtr_demo, type = 'class') == Ytr))/length(Ytr)
-sum((predict(fullfit, newx = Xtr_full, type = 'class') == Ytr))/length(Ytr)
-
-predict(fullfit, newx = Xtr_full, type = 'class') == Ytr
-
-fullplot <- glmnet(Xtr_full, Ytr, family = "binomial", #only penalize the continuous variables
-                   penalty.factor = c(0,1,rep(0,16), rep(1,693)), standardize = FALSE, nlambda=500, alpha = 1)
-
-plot(fullplot, xvar = "lambda")
-plot(cv.glmnet(Xtr_full, Ytr, family = "binomial", #only penalize the continuous variables
-              penalty.factor = c(0,1,rep(0,16), rep(1,693)), standardize = FALSE, alpha = 1))
-sum(Ytr)/length(Ytr)
-
-#Anxiety models
-Xtr_demo <- model.matrix(~., demo_df)[,-1]
-Xtr_full <- cbind(Xtr_demo, scale(data_mri[,-1], center = T, scale = T))
-Ytr <- disease_dsm[-na_demo,1]
-
-base_lam <-cv.glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
-                     penalty.factor = c(0,1,rep(0,16)), standardize = FALSE)$lambda.min
-
-basefit <- glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
-                  penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, lambda = lamdamin, alpha = 1)
-
-full_lam <- cv.glmnet(Xtr_full, Ytr, family = "binomial", alpha = 1)$lambda.min
-
-fullfit <- glmnet(Xtr_full, Ytr, family = "binomial", standardize = TRUE, lambda = full_lam, alpha = 1)
-
-coef(fullfit)
-
