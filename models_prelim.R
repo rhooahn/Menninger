@@ -97,8 +97,8 @@ random_index <- sample(1:nrow(data_mri_clean), nrow(data_mri_clean))
 Xv_demo <- model.matrix(~., demo_df[,-1])[random_index[1:floor(1/5 * length(random_index))],-1]
 Xtr_demo <- model.matrix(~., demo_df[,-1])[(floor(1/5 * length(random_index))+1) : length(random_index),-1]
 
-data_mri_scaled <- scale(data_mri_clean[,-1], center = T, scale = T)
-Xv_full <- cbind(Xv_demo, data_mri_scaled[1:floor(1/5 * length(random_index)),]); Xtr_full <- cbind(Xtr_demo, data_mri_scaled[(floor(1/5 * length(random_index))+1):length(random_index)])
+data_mri_scaled_v <- scale(data_mri_clean[1:floor(1/5 * length(random_index)),-1]); data_mri_scaled_tr <- scale(data_mri_clean[(floor(1/5 * length(random_index))+1):length(random_index),-1])
+Xv_full <- cbind(Xv_demo, data_mri_scaled_v); Xtr_full <- cbind(Xtr_demo, data_mri_scaled_tr)
 Yv <- disease_dsm_clean[1:floor(1/5 * length(random_index)),3]; Ytr <- disease_dsm_clean[(floor(1/5 * length(random_index))+1):length(random_index),3] #Depression indicator based on DSM
 
 ##### Data exploration/summary
