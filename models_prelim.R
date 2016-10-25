@@ -6,7 +6,7 @@ script_dir = '/Users/rhuang/Documents/Classes/Fall_16/Stat_Research/R' #director
 setwd(data_dir)
 #reading in data
 data <- read.csv("freesurfer_out.csv", header = T)[,-1] #free-surfer
-diag = load(file = 'menninger_clincial.rda')#Clinical data should be in data directory
+diag = load(file = 'menninger_clincial.rda') #Clinical data should be in data directory
 clinical = get(diag); rm(dataset) 
 
 #Formatting
@@ -60,33 +60,46 @@ sum(anxiety_indicator) #190 of 369 with anxiety
 sum(depression_indicator)  #208 of 369 with anxiety
 sum((anxiety_indicator == 1)  & (depression_indicator == 1)) #132 of 369 have anxiety and depression
 
-disease_dsm <- data.frame(anxiety = anxiety_indicator, depression = depression_indicator) #dsm9 grouped-disease matrix; depression and anxiety only for now
-
+disease_dsm <- data.frame(MIND_ID = data_mri$MIND_ID,anxiety = anxiety_indicator, depression = depression_indicator) #dsm9 grouped-disease matrix; depression and anxiety only for now
 #Demographic data pulling
 demo_features <- c("GENDER", "AGE","PI3_1", "PIMARRIED_1", "PI4_1")
-demo_df <- data_clinical[, which(colnames(data_clinical) %in% demo_features)]
-sapply(3:5, function(x) demo_df[,x] <<- as.factor(demo_df[,x]))
+demo_df <- data.frame(MIND_ID = data_mri$MIND_ID, data_clinical[, which(colnames(data_clinical) %in% demo_features)])
+sapply(4:6, function(x) demo_df[,x] <<- as.factor(demo_df[,x]))
 
 
 #Data pre-processing for model input
 na_mri <- which(colSums(data_mri) == 0) ; data_mri <- data_mri[,-na_mri]#remove NA from MRI data
 na_demo <- which(rowSums(is.na(demo_df))>0); data_mri <- data_mri[-na_demo,]; demo_df <- demo_df[-na_demo,] #remove NA rows from demo
-
 demo_df$AGE <- scale(demo_df$AGE, center = T, scale = T)
+data_mri_scaled <- scale(data_mri[,-1], center = T, scale = T)
 
+#Clean outliers from mri data: Pipeline system
+outlier_index <- which(data_mri_scaled > 5,arr.ind = T)
+data_mri_scaled[outlier_index]
+outlier_MINDID <- data_mri[outlier_index[,1],1] #MIND ID of outliers
+outlier_feature <- colnames(data_mri_scaled)[outlier_index[,2]] #feature name of outlier values
+outlier_values_scaled <- data_mri_scaled[outlier_index] ; outlier_values_unscaled <- data_mri[,-1][outlier_index]
+
+outlier_df <- data.frame(MIND_ID = outlier_MINDID, feature = outlier_feature,
+                         scaled_value = outlier_values_scaled, unscaled_value = outlier_values_unscaled)
+
+unique(outlier_MINDID)
+###Final renames
+data_mri_clean <- subset(data_mri, !(MIND_ID %in% outlier_MINDID))
+disease_dsm_clean <- subset(disease_dsm[-na_demo,], !(MIND_ID %in% outlier_MINDID))
+demo_df <- subset(demo_df, !(MIND_ID %in% outlier_MINDID))
 #####
 #initialize libraries
 library(glmnet)
 #Depression models
-Xtr_demo <- model.matrix(~., demo_df)[,-1]
-Xtr_full <- cbind(Xtr_demo, scale(data_mri[,-1], center = T, scale = T))
-Ytr <- disease_dsm[-na_demo,2]
+Xtr_demo <- model.matrix(~., demo_df[,-1])[,-1]
+data_mri_scaled <- scale(data_mri[,-1], center = T, scale = T)
+Xtr_full <- cbind(Xtr_demo, data_mri_scaled)
+Ytr <- disease_dsm[-na_demo,3] #Depression indicator based on DSM
+
 ##### Data exploration/summary
-summary(Xtr_full) #only finding is that there are some extreme outliers
-data_mri$WM.hypointensities
-str(Xtr_full)
+summary(data_mri_scaled) #only finding is that there are some extreme outliers
 #####
-nrow(Xtr_full)
 base_lam <-cv.glmnet(Xtr_demo, as.factor(Ytr), family = "binomial", #only penalize the continuous variables
           penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, alpha = .5)$lambda.min
 
@@ -94,21 +107,21 @@ basefit <- glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continu
        penalty.factor = c(0,1,rep(0,16)), standardize = FALSE, lambda = base_lam, alpha = 1)
 
 cv_full <- cv.glmnet(Xtr_full, as.factor(Ytr),
-                     family = "binomial",standardize = FALSE, alpha = .5, 
+                     family = "binomial",standardize = FALSE, alpha = 1, 
                      type.measure = 'class',penalty.factor = c(0,1,rep(0,16), rep(1,692)))
 
 plot(cv_full$lambda[1:10], cv_full$cvm[1:10])
 cv_full$lambda.min
 fullfit <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE,
-                  lambda = cv_full$lambda.min,penalty.factor = c(0,1,rep(0,16), rep(1,692)), alpha = .5)
+                  lambda = cv_full$lambda.min, penalty.factor = c(0,1,rep(0,16), rep(1,692)), alpha = 1)
 coef(fullfit)
 
-g_full_depression <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = .5)
+g_full_depression <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = 1)
 
 
-key_predictor_plot(g_full_depression, alpha_min = .1)+ggtitle("Elastic net (alpha .5) regularization path - Binary Depression Model")
+key_predictor_plot(g_full_depression, alpha_min = .1) + ggtitle("Elastic net (alpha .5) regularization path - Binary Depression Model")
 
-
+##Bivariate associations
 
 
 
