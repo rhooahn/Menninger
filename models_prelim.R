@@ -91,11 +91,15 @@ demo_df <- subset(demo_df, !(MIND_ID %in% outlier_MINDID))
 #####
 #initialize libraries
 library(glmnet)
-#Depression models
-Xtr_demo <- model.matrix(~., demo_df[,-1])[,-1]
-data_mri_scaled <- scale(data_mri[,-1], center = T, scale = T)
-Xtr_full <- cbind(Xtr_demo, data_mri_scaled)
-Ytr <- disease_dsm[-na_demo,3] #Depression indicator based on DSM
+#intialize input data
+random_index <- sample(1:nrow(data_mri_clean), nrow(data_mri_clean))
+
+Xv_demo <- model.matrix(~., demo_df[,-1])[random_index[1:floor(1/5 * length(random_index))],-1]
+Xtr_demo <- model.matrix(~., demo_df[,-1])[(floor(1/5 * length(random_index))+1) : length(random_index),-1]
+
+data_mri_scaled <- scale(data_mri_clean[,-1], center = T, scale = T)
+Xv_full <- cbind(Xv_demo, data_mri_scaled[1:floor(1/5 * length(random_index)),]); Xtr_full <- cbind(Xtr_demo, data_mri_scaled[(floor(1/5 * length(random_index))+1):length(random_index)])
+Yv <- disease_dsm_clean[1:floor(1/5 * length(random_index)),3]; Ytr <- disease_dsm_clean[(floor(1/5 * length(random_index))+1):length(random_index),3] #Depression indicator based on DSM
 
 ##### Data exploration/summary
 summary(data_mri_scaled) #only finding is that there are some extreme outliers
