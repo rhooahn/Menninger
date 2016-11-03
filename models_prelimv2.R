@@ -100,21 +100,23 @@ disease_dsm_clean <- subset(disease_dsm, !(MIND_ID %in% outlier_MINDID))
 #initialize libraries
 library(glmnet)
 #intialize input data
-random_index <- sample(1:nrow(data_mri_clean), nrow(data_mri_clean))
+nrow(data_mri_clean)
+colSums(data_mri_clean)
+length(valid_ID)
 
-Xv_demo <- as.data.frame(model.matrix(~., demo_df[,-1])[random_index[1:floor(1/5 * length(random_index))],-1])
-Xv_demo$AGE <- scale(Xv_demo$AGE, center = attributes(Xtr_demo$AGE)$'scaled:center',
-                     scale = attributes(Xtr_demo$AGE)$'scaled:scale')
-Xv_demo <- as.matrix(Xv_demo); Xtr_demo <- as.matrix(Xtr_demo)
+data_mri_tr <- subset(data_mri_clean, !(MIND_ID %in% valid_ID))
+summary(data_mri_tr)
+colSums(data_mri_tr)
+data_mri_v <- subset(data_mri_clean, (MIND_ID %in% valid_ID))
+subset(data_mri_clean)
+colnames(data_mri_v)
+data_mri_scaled_tr <- scale(data_mri_tr[,-1], center = T, scale = T)
+summary(data_mri_scaled_tr)
+data_mri_scaled_v <- scale(data_mri_v[,-1], center = T, scale = T)
 
-data_mri_scaled_tr <- scale(data_mri_clean[random_index[(floor(1/5 * length(random_index))+1):length(random_index)],-1])
-data_mri_scaled_v <- scale(data_mri_clean[random_index[1:floor(1/5 * length(random_index))],-1],
-                           center = attributes(data_mri_scaled_tr)$'scaled:center',
-                           scale = attributes(data_mri_scaled_tr)$'scaled:scale')
-Xv_full <- as.matrix(cbind(Xv_demo, data_mri_scaled_v)); Xtr_full <- as.matrix(cbind(Xtr_demo, data_mri_scaled_tr))
-
-Yv <- disease_dsm_clean[random_index[1:floor(1/5 * length(random_index))],3]; Ytr <- disease_dsm_clean[random_index[(floor(1/5 * length(random_index))+1):length(random_index)],3] #Depression indicator based on DSM
-
+Yv <- subset(disease_dsm_clean, (MIND_ID %in% valid_ID))[,2]; Ytr <- subset(disease_dsm_clean, !(MIND_ID %in% valid_ID))[,2] #Depression indicator based on DSM
+Xtr <- data_mri_scaled_tr ; Xv <- data_mri_scaled_v
+summary(Xtr)
 ##### Data exploration/summary
 # summary(data_mri_scaled_v) #only finding is that there are some extreme outliers
 # colnames(Xtr_demo)
@@ -147,55 +149,33 @@ OptimLambda <- function(k, ...) {
   require(data.table)
   require(plyr)
   MSEs <- data.table(rbind.fill(mclapply(seq(k), function(dummy) Lambdas(...))))
-  return(MSEs[, list(mean.cvm=mean(cvm)), lambda][order(mean.cvm)][1]$lambda)
+  return(MSEs[, list(mean.cvm=mean(cvm)), lambda][order(mean.cvm)])
 }
 
-full_lam <- OptimLambda(k=10, y=as.factor(Ytr), x=Xtr_full, family = 'binomial',type.measure="auc",
-                        penalty.factor = c(0,1,rep(0,11), rep(1,311)), standardize = FALSE, alpha=1)
+# min_lam <- OptimLambda(k=1, y=as.factor(Ytr), x=Xtr, family = 'binomial',type.measure="auc",
+#                         standardize = FALSE, alpha=1)
 
-base_lam <-OptimLambda(k = 5, x = Xtr_demo, y= as.factor(Ytr), family = "binomial", type.measure="auc",#only penalize the continuous variables
-                      penalty.factor = c(0,1,rep(0,11)), standardize = FALSE, alpha = 1)
- 
-# colnames(Xtr_full)
+min_lam <- cv.glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,type.measure = 'auc', alpha = 1)
+fullfit <- glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,
+                  lambda = min_lam$lambda.min, alpha = 1)
 
-basefit <- glmnet(Xtr_demo, as.factor(Ytr), family = "binomial", #only penalize the continuous variables
-                penalty.factor = c(0,1,rep(0,11)), standardize = FALSE, lambda = base_lam, alpha = 1)
-
-coef(basefit)
-sum(predict(basefit, newx = Xv_demo, type = 'class') == Yv)/length(Yv)
-
-#write.csv(predict(basefit, newx = Xv_demo, type = 'class'), "depression_base_251016.csv")
-#base <- read.csv('depression_base_251016.csv')
-#full <- read.csv('depress_full251016.csv')
-
-# base
-# sum(base[,2] == full[,3])/nrow(full)
-# sum(full[,3])/length(full[,3])
-# nrow(full[which(full[,3] == 0 ),])
-# table(full$s0, full$actual)
-# 
-# cv_full <- cv.glmnet(Xtr_full, as.factor(Ytr),
-#                      family = "binomial",standardize = FALSE, alpha = 1, 
-#                      type.measure = 'auc',penalty.factor = c(0,1,rep(0,11), rep(1,311)))
-
-# plot(cv_full$lambda[1:10], cv_full$cvm[1:10])
-# cv_full$lambda.min
-# dep_tr <- sum(Yv)/length(Yv)
-# weighting <- rep(1/dep_tr, times = length(Ytr))
-# weighting[which(Ytr == 0)] <- 1/(1-dep_tr)
-
-fullfit <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE,
-                  lambda = full_lam, penalty.factor = c(0,1,rep(0,11), rep(1,311)), alpha = 1)
 coef(fullfit)
 
-sum(predict(fullfit, newx = Xv_full, type = 'class') == Yv)/length(Yv)
+sum(predict(fullfit, newx = Xv, type = 'class') == Yv)/length(Yv)
+predict(fullfit, newx = Xv, type = 'class')
 sum(Yv)/length(Yv)
-1- sum(Ytr)/length(Ytr)
 
-table(data.frame(predict = predict(fullfit, newx = Xv_full, type = 'class'), actual = Yv))
+table(data.frame(predict = predict(fullfit, newx = Xv, type = 'class'), actual = Yv))
 
-write.csv(data.frame(predict = predict(fullfit, newx = Xv_full, type = 'class'), actual = Yv), "depress_full251016.csv")
-g_full_depression <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = 1)
+#df100
+print(glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = 1)) #Check lambda where df = 100
+df100_features <- as.matrix(glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,
+                                   alpha = 1, lambda = .001157)$beta)
+write.csv(df100_features, "features_df100.csv")
+
+# 
+# write.csv(data.frame(predict = predict(fullfit, newx = Xv_full, type = 'class'), actual = Yv), "depress_full251016.csv")
+# g_full_depression <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = 1)
 
 
 key_predictor_plot(g_full_depression, alpha_min = .1) + ggtitle("Elastic net (alpha .5) regularization path - Binary Depression Model")
