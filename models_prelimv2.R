@@ -100,21 +100,13 @@ disease_dsm_clean <- subset(disease_dsm, !(MIND_ID %in% outlier_MINDID))
 #initialize libraries
 library(glmnet)
 #intialize input data
-nrow(data_mri_clean)
-colSums(data_mri_clean)
-length(valid_ID)
-
 data_mri_tr <- subset(data_mri_clean, !(MIND_ID %in% valid_ID))
-summary(data_mri_tr)
-colSums(data_mri_tr)
 data_mri_v <- subset(data_mri_clean, (MIND_ID %in% valid_ID))
-subset(data_mri_clean)
-colnames(data_mri_v)
+
 data_mri_scaled_tr <- scale(data_mri_tr[,-1], center = T, scale = T)
-summary(data_mri_scaled_tr)
 data_mri_scaled_v <- scale(data_mri_v[,-1], center = T, scale = T)
 
-Yv <- subset(disease_dsm_clean, (MIND_ID %in% valid_ID))[,2]; Ytr <- subset(disease_dsm_clean, !(MIND_ID %in% valid_ID))[,2] #Depression indicator based on DSM
+Yv <- subset(disease_dsm_clean, (MIND_ID %in% valid_ID))[,3]; Ytr <- subset(disease_dsm_clean, !(MIND_ID %in% valid_ID))[,3] #Depression indicator based on DSM
 Xtr <- data_mri_scaled_tr ; Xv <- data_mri_scaled_v
 summary(Xtr)
 ##### Data exploration/summary
@@ -149,20 +141,22 @@ OptimLambda <- function(k, ...) {
   require(data.table)
   require(plyr)
   MSEs <- data.table(rbind.fill(mclapply(seq(k), function(dummy) Lambdas(...))))
-  return(MSEs[, list(mean.cvm=mean(cvm)), lambda][order(mean.cvm)])
+  return(MSEs[, list(mean.cvm=mean(cvm)), lambda][order(mean.cvm)][1])
 }
 
-# min_lam <- OptimLambda(k=1, y=as.factor(Ytr), x=Xtr, family = 'binomial',type.measure="auc",
-#                         standardize = FALSE, alpha=1)
+min_lam <- OptimLambda(k=10, y=as.factor(Ytr), x=Xtr, family = 'binomial',type.measure="auc",
+                         standardize = FALSE, alpha=1)
 
-min_lam <- cv.glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,type.measure = 'auc', alpha = 1)
-fullfit <- glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,
-                  lambda = min_lam$lambda.min, alpha = 1)
+dep_lam <- cv.glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,type.measure = 'auc', alpha = 1)
+depfit <- glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,
+                  lambda = dep_lam$lambda.min, alpha = 1)
 
-coef(fullfit)
+coef(depfit)
+dep_coef <- as.matrix(depfit$beta)
+dep_coef[dep_coef!=0,]
 
-sum(predict(fullfit, newx = Xv, type = 'class') == Yv)/length(Yv)
-predict(fullfit, newx = Xv, type = 'class')
+sum(predict(depfit, newx = Xv, type = 'class') == Yv)/length(Yv)
+dep_pred = predict(depfit, newx = Xv)
 sum(Yv)/length(Yv)
 
 table(data.frame(predict = predict(fullfit, newx = Xv, type = 'class'), actual = Yv))
@@ -178,66 +172,47 @@ write.csv(df100_features, "features_df100.csv")
 # g_full_depression <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = 1)
 
 
-key_predictor_plot(g_full_depression, alpha_min = .1) + ggtitle("Elastic net (alpha .5) regularization path - Binary Depression Model")
+#key_predictor_plot(g_full_depression, alpha_min = .1) + ggtitle("Elastic net (alpha .5) regularization path - Binary Depression Model")
 
 #####Anxiety Binary Models
-random_index <- sample(1:nrow(data_mri_clean), nrow(data_mri_clean))
+Yv <- subset(disease_dsm_clean, (MIND_ID %in% valid_ID))[,2]; Ytr <- subset(disease_dsm_clean, !(MIND_ID %in% valid_ID))[,2] #Anxiety indicator based on DSM
 
-Xv_demo <- model.matrix(~., demo_df[,-1])[random_index[1:floor(1/5 * length(random_index))],-1]
-Xtr_demo <- model.matrix(~., demo_df[,-1])[random_index[(floor(1/5 * length(random_index))+1) : length(random_index)],-1]
+anx_lam <- cv.glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,type.measure = 'auc', alpha = 1)
+anxfit <- glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,
+                  lambda = min_lam$lambda.min, alpha = 1)
 
-data_mri_scaled_v <- scale(data_mri_clean[random_index[1:floor(1/5 * length(random_index))],-1]); data_mri_scaled_tr <- scale(data_mri_clean[random_index[(floor(1/5 * length(random_index))+1):length(random_index)],-1])
-Xv_full <- cbind(Xv_demo, data_mri_scaled_v); Xtr_full <- cbind(Xtr_demo, data_mri_scaled_tr)
-
-Yv <- disease_dsm_clean[random_index[1:floor(1/5 * length(random_index))],2]; Ytr <- disease_dsm_clean[random_index[(floor(1/5 * length(random_index))+1):length(random_index)],2] #Depression indicator based on DSM
-
-
-
-full_lam <- OptimLambda(k=5, y=as.factor(Ytr), x=Xtr_full, family = 'binomial',type.measure="auc",
-                        penalty.factor = c(0,1,rep(0,11), rep(1,311)), standardize = FALSE, alpha=1)
-
-base_lam <-OptimLambda(k = 10, x = Xtr_demo, y= as.factor(Ytr), family = "binomial", type.measure="auc",
-                       penalty.factor = c(0,1,rep(0,11)), standardize = FALSE, alpha = 1)
-
-# colnames(Xtr_full)
-
-
-basefit <- glmnet(Xtr_demo, Ytr, family = "binomial", #only penalize the continuous variables
-                  penalty.factor = c(0,1,rep(0,11)), standardize = FALSE, lambda = base_lam, alpha = 1)
-
-coef(basefit)
-sum(predict(basefit, newx = Xv_demo, type = 'class') == Yv)/length(Yv)
-
-
-
-# cv_full <- cv.glmnet(Xtr_full, as.factor(Ytr),
-#                      family = "binomial",standardize = FALSE, alpha = 1, 
-#                      type.measure = 'auc',penalty.factor = c(0,1,rep(0,11), rep(1,311)))
-
-# plot(cv_full$lambda[1:10], cv_full$cvm[1:10])
-# cv_full$lambda.min
-
-fullfit <- glmnet(Xtr_full, as.factor(Ytr),family = "binomial", standardize = FALSE,
-                  lambda = full_lam, penalty.factor = c(0,1,rep(0,11), rep(1,311)), alpha = 1)
-coef(fullfit)
-
-sum(predict(fullfit, newx = Xv_full, type = 'class') == Yv)/length(Yv)
+coef(anxfit)
+anx_coef <- as.matrix(anxfit$beta)
+anx_coef[anx_coef!=0,]
+sum(predict(anxfit, newx = Xv, type = 'class') == Yv)/length(Yv)
+anx_pred = predict(anxfit, newx = Xv)
 sum(Yv)/length(Yv)
 
-weighting <- rep(1/anx_tr, times = length(Ytr))
-weighting[which(Ytr == 0)] <- 1/(1-anx_tr)
+table(data.frame(predict = predict(anxfit, newx = Xv, type = 'class'), actual = Yv))
+#df100
+print(glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE, alpha = 1)) #Check lambda where df = 100
+df100_features <- as.matrix(glmnet(Xtr, as.factor(Ytr),family = "binomial", standardize = FALSE,
+                                   alpha = 1, lambda = .001157)$beta)
+write.csv(df100_features, "features_anxiety_df100.csv")
 
-1+1
+#ROCR metrics
+library(ROCR)
+#Anxiety
+pred <- prediction(anx_pred, Yv)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, col=rainbow(10), main ="Anxiety ROC")
+abline(a=0, b= 1)
 
+acc.perf = performance(pred, measure = 'acc')
+plot(acc.perf, main = "Anxiety Accuracy")
+#Depression
+pred <- prediction(dep_pred, Yv)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, col=rainbow(10), main = "Depression ROC")
+abline(a=0, b= 1)
 
-anx_tr <- sum(Ytr)/length(Ytr)
-
-34/57
-33+18+6
-
-
-
-
+acc.perf = performance(pred, measure = 'acc')
+plot(acc.perf, main = "Depression Accuracy")
 #Plotter function
 key_predictor_plot <- function(x, ..., num_predictors=10, alpha_min=0.4){
   stopifnot(require("ggplot2"))
